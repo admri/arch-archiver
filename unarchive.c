@@ -31,7 +31,7 @@ bool readArchiveHeader(FILE* file, struct ArchiveHeader* header)
     // Magic number
     unsigned char magic[sizeof header->magic];
 
-    readBlock(file, magic, sizeof magic, &read);
+    readFile(file, magic, sizeof magic, &read);
     if (read != sizeof magic)
     {
         perror("Failed to read magic number");
@@ -43,7 +43,7 @@ bool readArchiveHeader(FILE* file, struct ArchiveHeader* header)
     // Version number
     unsigned char version[sizeof header->version];
 
-    readBlock(file, version, sizeof version, &read);
+    readFile(file, version, sizeof version, &read);
     if (read != sizeof version)
     {
         perror("Failed to read archive version");
@@ -55,7 +55,7 @@ bool readArchiveHeader(FILE* file, struct ArchiveHeader* header)
     // Files count
     unsigned char fileCount[sizeof header->fileCount];
 
-    readBlock(file, fileCount, sizeof fileCount, &read);
+    readFile(file, fileCount, sizeof fileCount, &read);
 
     if (read != sizeof fileCount)
     {
@@ -81,7 +81,7 @@ bool readFileHeader(FILE* archiveFile, struct FileHeader* header, char** fileNam
     // Name length
     unsigned char nameLength[sizeof header->nameLength];
 
-    readBlock(archiveFile, nameLength, sizeof nameLength, &read);
+    readFile(archiveFile, nameLength, sizeof nameLength, &read);
     if (read != sizeof nameLength)
     {
         perror("Failed to read file name length");
@@ -93,7 +93,7 @@ bool readFileHeader(FILE* archiveFile, struct FileHeader* header, char** fileNam
     // File size
     unsigned char fileSize[sizeof header->size];
 
-    readBlock(archiveFile, fileSize, sizeof fileSize, &read);
+    readFile(archiveFile, fileSize, sizeof fileSize, &read);
     if (read != sizeof fileSize)
     {
         perror("Failed to read file size");
@@ -110,7 +110,7 @@ bool readFileHeader(FILE* archiveFile, struct FileHeader* header, char** fileNam
         return false;
     }
 
-    readBlock(archiveFile, *fileName, header->nameLength, &read);
+    readFile(archiveFile, *fileName, header->nameLength, &read);
     if (read != header->nameLength)
     {
         perror("Failed to read file name");
