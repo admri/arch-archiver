@@ -37,6 +37,6 @@ bool writeArchiveHeader(FILE* file, struct ArchiveHeader* header);
 bool createArchive(struct Archive* archive, struct ArchiveHeader* header);
 
 bool writeFileHeader(FILE* file, struct FileHeader* header, const char* fileName, long* compSizePos);
-bool addToArchive(struct Archive* archive, const char* filePath);
+bool addToArchive(FILE* archive, const char* filePath);
 
 #endif // ARCHIVE_H

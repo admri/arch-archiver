@@ -80,62 +80,48 @@ bool readFileHeader(FILE* archiveFile, struct FileHeader* header, char** fileNam
 
     // Name length
     unsigned char nameLength[sizeof header->nameLength];
-
-    readFile(archiveFile, nameLength, sizeof nameLength, &read);
-    if (read != sizeof nameLength)
+    if (!readFile(archiveFile, nameLength, sizeof nameLength, &read) || read != sizeof nameLength)
     {
         perror("Failed to read file name length");
         return false;
     }
-
     header->nameLength = read_u16_le(nameLength);
 
     // Original file size
     unsigned char origSize[sizeof header->origSize];
-
-    readFile(archiveFile, origSize, sizeof origSize, &read);
-    if (read != sizeof origSize)
+    if (!readFile(archiveFile, origSize, sizeof origSize, &read) || read != sizeof origSize)
     {
         perror("Failed to read file size");
         return false;
     }
-
     header->origSize = read_u64_le(origSize);
 
     // Compressed file size
     unsigned char compSize[sizeof header->compSize];
-
-    readFile(archiveFile, compSize, sizeof compSize, &read);
-    if (read != sizeof compSize)
+    if (!readFile(archiveFile, compSize, sizeof compSize, &read) || read != sizeof compSize)
     {
         perror("Failed to read compressed file size");
         return false;
     }
-
     header->compSize = read_u64_le(compSize);
 
     // Flags
     unsigned char flags[sizeof header->flags];
-
-    readFile(archiveFile, flags, sizeof flags, &read);
-    if (read != sizeof flags)
+    if (!readFile(archiveFile, flags, sizeof flags, &read) || read != sizeof flags)
     {
         perror("Failed to read file flags");
         return false;
     }
-
     header->flags = flags[0];
 
     // File name
-    *fileName = malloc(header->nameLength + 1);
+    *fileName = malloc((size_t)header->nameLength + 1);
     if (!*fileName)
     {
         perror("malloc failed");
         return false;
     }
-
-    readFile(archiveFile, *fileName, header->nameLength, &read);
-    if (read != header->nameLength)
+    if (!readFile(archiveFile, *fileName, header->nameLength, &read) || read != header->nameLength)
     {
         perror("Failed to read file name");
         free(*fileName);
@@ -149,17 +135,23 @@ bool readFileHeader(FILE* archiveFile, struct FileHeader* header, char** fileNam
 bool copyNextFile(FILE* archiveFile, const char* dirPath)
 {
     struct FileHeader header;
-    char* fileName;
+    char* fileName = NULL;
 
     if (!readFileHeader(archiveFile, &header, &fileName))
     {
-        perror("Failed to read file header");
+        fprintf(stderr, "Failed to read file header\n");
         return false;
     }
 
     // Construct file path
     size_t filePathSize = strlen(dirPath) + sizeof(DIR_SEP) + strlen(fileName) + 1;
     char* filePath = malloc(filePathSize);
+    if (!filePath)
+    {
+        perror("malloc failed");
+        free(fileName);
+        return false;
+    }
     snprintf(filePath, filePathSize, "%s%c%s", dirPath, DIR_SEP, fileName);
 
     FILE* file = fopen(filePath, "wb");
@@ -171,27 +163,23 @@ bool copyNextFile(FILE* archiveFile, const char* dirPath)
         return false;
     }
 
+    bool ok = true;
     if (header.flags & COMPRESSED_FLAG)
     {
-        if (!decompressFileStream(archiveFile, file, header.compSize))
-        {
-            perror("Failed to decompress data to output file");
-            free(filePath);
-            free(fileName);
-            fclose(file);
-            return false;
-        }
+        ok = decompressFileStream(archiveFile, file, header.compSize);
     }
     else
     {
-        if (!copyFileData(archiveFile, file, header.origSize))
-        {
-            perror("Failed to copy data to output file");
-            free(filePath);
-            free(fileName);
-            fclose(file);
-            return false;
-        }
+        ok = copyFileData(archiveFile, file, header.origSize);
+    }
+
+    if (!ok)
+    {
+        fprintf(stderr, "Failed handling file %s\n", fileName);
+        free(filePath);
+        free(fileName);
+        fclose(file);
+        return false;
     }
 
     free(filePath);
@@ -222,7 +210,7 @@ bool unarchive(const char* filePath)
     struct ArchiveHeader header;
     if (!readArchiveHeader(archiveFile, &header))
     {
-        perror("Failed to read archive header");
+        fprintf(stderr, "Failed to read archive header\n");
         free(dirName);
         fclose(archiveFile);
         return false;
@@ -232,7 +220,7 @@ bool unarchive(const char* filePath)
     {
         if (!copyNextFile(archiveFile, dirName))
         {
-            printf("Failed to unarchive file %d", i + 1);
+            fprintf(stderr, "Failed to unarchive file %u\n", i + 1);
         }
     }
 

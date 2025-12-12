@@ -61,7 +61,7 @@ int main(int argc, char** argv)
         
         for (size_t i = 0; i < archive.fileCount; i++)
         {
-            if (addToArchive(&archive, archive.fileList[i]))
+            if (addToArchive(archive.file, archive.fileList[i]))
             {
                 header.fileCount++;
                 fseek(archive.file, 4 + sizeof(uint16_t), SEEK_SET);

@@ -7,7 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef BUFFER_SIZE
 #define BUFFER_SIZE 4096
+#endif
+
 #define COMPRESSED_FLAG 1
 
 #ifdef _WIN32

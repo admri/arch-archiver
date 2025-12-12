@@ -1,1 +1,1 @@
-gcc src/*.c -Iexternal/zlib -Lexternal/zlib -lz -o arch.exe
+gcc src/*.c -Iexternal/zlib -Lexternal/zlib -lz -static -o arch.exe
