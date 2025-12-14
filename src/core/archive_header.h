@@ -16,11 +16,11 @@ typedef struct ArchiveHeader
     char reserved[20];
 } ArchiveHeader; // 32 bytes
 
-ArchiveHeader* createArchiveHeader();
+bool createArchiveHeader(ArchiveHeader* header);
 void freeArchiveHeader(ArchiveHeader* header);
 
 bool writeArchiveHeader(FILE* file, const ArchiveHeader* header);
 bool updateArchiveHeaderFileCount(FILE* file, uint32_t fileCount);
-ArchiveHeader* readArchiveHeader(FILE* file);
+bool readArchiveHeader(FILE* file, ArchiveHeader* header);
 
 #endif // ARCHIVE_HEADER_H

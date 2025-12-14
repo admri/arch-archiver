@@ -29,16 +29,15 @@ uint64_t read_u64_le(const unsigned char b[8])
     return res;
 }
 
-FileHeader* createFileHeader(const char* path, uint8_t flags, FILE** outFile)
+bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE** outFile)
 {
-    if (!path) return NULL;
+    if (!header || !path) return false;
 
     FILE* file = NULL;
     char* fileName = NULL;
-    FileHeader* header = NULL;
 
     file = fopen(path, "rb");
-    if (!file) return NULL;
+    if (!file) return false;
 
     uint64_t origSize = getFileSize(file);
 
@@ -46,14 +45,11 @@ FileHeader* createFileHeader(const char* path, uint8_t flags, FILE** outFile)
     if (!fileName)
     {
         fclose(file);
-        return NULL;
+        return false;
     }
 
     size_t nameLen = strlen(fileName);
     if (nameLen > UINT16_MAX) goto cleanup;
-
-    header = (FileHeader*)malloc(sizeof(FileHeader));
-    if (!header) goto cleanup;
 
     header->nameLength = (uint16_t)nameLen;
     header->origSize = origSize;
@@ -62,13 +58,12 @@ FileHeader* createFileHeader(const char* path, uint8_t flags, FILE** outFile)
 
     free(fileName);
     *outFile = file;
-    return header;
+    return true;
 
 cleanup:
     if (file) fclose(file);
     free(fileName);
-    free(header);
-    return NULL;
+    return false;
 }
 
 void freeFileHeader(FileHeader *header)

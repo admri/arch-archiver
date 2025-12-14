@@ -13,21 +13,19 @@ Archive* arch_open(const char* path)
     if (!path) return NULL;
 
     Archive* archive = NULL;
-    ArchiveHeader* header = NULL;
 
     archive = createArchive(path, "rb");
     if (!archive) return NULL;
 
-    header = readArchiveHeader(archive->file);
-    if (!header)
+    ArchiveHeader header;
+    if (!readArchiveHeader(archive->file, &header))
     {
         freeArchive(archive);
         return NULL;
     }
 
-    archive->fileCount = header->fileCount;
-    freeArchiveHeader(header);
-    
+    archive->fileCount = header.fileCount;
+
     return archive;
 }
 
@@ -36,15 +34,13 @@ bool arch_retrieveNextFile(Archive* archive, const char* output_dir)
     if (!archive || !output_dir) return false;
     if (archive->currentFileIndex >= archive->fileCount) return false;
     
-    FileHeader* header = NULL;
     char* fileName = NULL;
     char* filePath = NULL;
     FILE* file = NULL;
     bool ok = false;
 
-    header = (FileHeader*)malloc(sizeof(FileHeader));
-    if (!header) return false;
-    if (!readFileHeader(archive->file, header, &fileName)) goto cleanup;
+    FileHeader header;
+    if (!readFileHeader(archive->file, &header, &fileName)) goto cleanup;
 
     size_t filePathSize = strlen(output_dir) + sizeof(DIR_SEP) + strlen(fileName) + 1;
     filePath = malloc(filePathSize);
@@ -59,20 +55,19 @@ bool arch_retrieveNextFile(Archive* archive, const char* output_dir)
         goto cleanup;
     }
 
-    if (header->flags & COMPRESSED_FLAG)
+    if (header.flags & COMPRESSED_FLAG)
     {
-        ok = decompressFileStream(archive->file, file, header->compSize);
+        ok = decompressFileStream(archive->file, file, header.compSize);
     }
     else
     {
-        ok = copyFileData(archive->file, file, header->origSize);
+        ok = copyFileData(archive->file, file, header.origSize);
     }
 
 cleanup:
-    if (file) fclose(file);
     free(filePath);
     free(fileName);
-    freeFileHeader(header);
+    if (file) fclose(file);
 
     archive->currentFileIndex++;
     return ok;

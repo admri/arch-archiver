@@ -9,7 +9,7 @@ int main(int argc, char** argv)
 {
     if (argc < 2)
     {
-        printf("Usage: arch [archive_name] [file1] [file2]...\n");
+        printf("Usage: %s [archive_name] [file1] [file2]...\n", argv[0]);
         return 1;
     }
 

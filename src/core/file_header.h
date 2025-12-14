@@ -15,7 +15,7 @@ typedef struct FileHeader
     uint8_t flags;
 } FileHeader; // 19 bytes (+ variable-sized file name)
 
-FileHeader* createFileHeader(const char* path, uint8_t flags, FILE** outFile);
+bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE** outFile);
 void freeFileHeader(FileHeader* header);
 
 bool writeFileHeader(FILE* file, const FileHeader* header, const char* fileName, uint64_t* compSizePos);

@@ -9,23 +9,18 @@ Archive* arch_create(const char *path)
 {
     if (!path) return NULL;
 
-    Archive* archive = NULL;
-    ArchiveHeader* header = NULL;
-
-    archive = createArchive(path, "wb+");
+    Archive* archive = createArchive(path, "wb+");
     if (!archive) return NULL;
 
-    header = createArchiveHeader();
-    if (!header) goto cleanup;
+    ArchiveHeader header;
+    if (!createArchiveHeader(&header)) goto cleanup;
 
-    if (!writeArchiveHeader(archive->file, header)) goto cleanup;
+    if (!writeArchiveHeader(archive->file, &header)) goto cleanup;
 
-    freeArchiveHeader(header);
     return archive;
 
 cleanup:
     freeArchive(archive);
-    freeArchiveHeader(header);
     return NULL;
 }
 
@@ -34,22 +29,22 @@ bool arch_addFile(Archive* archive, const char* path)
     if (!archive || !path) return false;
 
     FILE* file = NULL;
-    FileHeader* fileHeader = NULL;
     char* fileName = NULL;
-    uint64_t compSizePos = 0;
-    uint64_t compSize = 0;
     bool success = false;
 
-    fileHeader = createFileHeader(path, COMPRESSED_FLAG, &file);
-    if (!fileHeader) return false;
+    FileHeader fileHeader;
+    if (!createFileHeader(path, COMPRESSED_FLAG, &fileHeader, &file)) return false;
 
     fileName = getFileName(path, false);
     if (!fileName) goto cleanup;
-    if (!writeFileHeader(archive->file, fileHeader, fileName, &compSizePos)) goto cleanup;
 
+    uint64_t compSizePos = 0;
+    if (!writeFileHeader(archive->file, &fileHeader, fileName, &compSizePos)) goto cleanup;
+
+    uint64_t compSize = 0;
     if (!compressFileStream(file, archive->file, &compSize)) goto cleanup;
 
-    if (!updateFileHeaderCompSize(fileHeader, archive->file, compSizePos, compSize)) goto cleanup;
+    if (!updateFileHeaderCompSize(&fileHeader, archive->file, compSizePos, compSize)) goto cleanup;
 
     archive->fileCount++;
     if (!updateArchiveHeaderFileCount(archive->file, archive->fileCount)) goto cleanup;
@@ -57,9 +52,8 @@ bool arch_addFile(Archive* archive, const char* path)
     success = true;
 
 cleanup:
-    freeFileHeader(fileHeader);
-    free(fileName);
     if (file) fclose(file);
+    free(fileName);
     return success;
 }
 
