@@ -1,12 +1,10 @@
 #include "file_header.h"
 #include "../util/file.h"
 
-#include <zlib.h>
-
 #include <stdlib.h>
 #include <string.h>
 
-bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE** outFile)
+bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE** outFile, uint64_t* outOrigSize)
 {
     if (!header || !path) return false;
 
@@ -16,7 +14,7 @@ bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE*
     file = fopen(path, "rb");
     if (!file) return false;
 
-    uint64_t origSize = getFileSize(file);
+    *outOrigSize = getFileSize(file);
 
     fileName = getFileName(path, false);
     if (!fileName)
@@ -28,9 +26,12 @@ bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE*
     size_t nameLen = strlen(fileName);
     if (nameLen > UINT16_MAX) goto cleanup;
 
+    header->magic = FILE_MAGIC;
     header->nameLength = (uint16_t)nameLen;
-    header->origSize = origSize;
+    header->origSize = *outOrigSize;
     header->compSize = 0;
+    header->crc32_uncompressed = 0;
+    header->crc32_compressed = 0;
     header->flags = flags;
 
     free(fileName);
@@ -48,21 +49,45 @@ void freeFileHeader(FileHeader *header)
     if (header) free(header);
 }
 
-bool writeFileHeader(FILE *file, const FileHeader* header, const char* fileName, uint64_t* compSizePos)
+bool writeFileHeader(FILE *file, const FileHeader* header, const char* fileName, uint64_t* outCompSizePos, uint64_t* outCrcUncompressedPos, uint64_t* outCrcCompressedPos)
 {
+    if (!file || !header || !fileName || !outCompSizePos) return false;
+
+    if (!writeFile(file, (const char*)&header->magic, sizeof(header->magic))) return false;
     if (!writeFile(file, (const char*)&header->nameLength, sizeof(header->nameLength))) return false;
     if (!writeFile(file, (const char*)&header->origSize, sizeof(header->origSize))) return false;
 
+    // Compressed size placeholder
+    uint64_t zero_64 = 0;
     int64_t pos = ftell64(file);
     if (pos < 0)
     {
         perror("ftell failed");
         return false;
     }
-    *compSizePos = (uint64_t)pos;
+    *outCompSizePos = (uint64_t)pos;
+    if (!writeFile(file, (const char*)&zero_64, sizeof(zero_64))) return false;
 
-    uint64_t zero = 0;
-    if (!writeFile(file, (const char*)&zero, sizeof(zero))) return false;
+    // CRC32 placeholders
+    uint32_t zero_32 = 0;
+    pos = ftell64(file);
+    if (pos < 0)
+    {
+        perror("ftell failed");
+        return false;
+    }
+    *outCrcUncompressedPos = (uint64_t)pos;
+    if (!writeFile(file, (const char*)&zero_32, sizeof(zero_32))) return false;
+
+    pos = ftell64(file);
+    if (pos < 0)
+    {
+        perror("ftell failed");
+        return false;
+    }
+    *outCrcCompressedPos = (uint64_t)pos;
+    if (!writeFile(file, (const char*)&zero_32, sizeof(zero_32))) return false;
+
     if (!writeFile(file, (const char*)&header->flags, sizeof(header->flags))) return false;
     if (!writeFile(file, fileName, header->nameLength)) return false;
 
@@ -84,9 +109,38 @@ bool updateFileHeaderCompSize(FileHeader* header, FILE *file, uint64_t compSizeP
     return true;
 }
 
+bool updateFileHeaderCRC32(FileHeader *header, FILE *file, uint64_t crc32UncompressedPos, uint64_t crc32CompressedPos, uint32_t crc32Uncompressed, uint32_t crc32Compressed)
+{
+    int64_t origPos = ftell64(file);
+    if (origPos < 0) return false;
+
+    if (fseek64(file, (int64_t)crc32UncompressedPos, SEEK_SET) != 0) return false;
+    if (!writeFile(file, (const char*)&crc32Uncompressed, sizeof(crc32Uncompressed))) return false;
+    fflush(file);
+
+    if (fseek64(file, (int64_t)crc32CompressedPos, SEEK_SET) != 0) return false;
+    if (!writeFile(file, (const char*)&crc32Compressed, sizeof(crc32Compressed))) return false;
+    fflush(file);
+
+    if (fseek64(file, origPos, SEEK_SET) != 0) return false;
+
+    header->crc32_uncompressed = crc32Uncompressed;
+    header->crc32_compressed = crc32Compressed;
+    return true;
+}
+
 bool readFileHeader(FILE* archiveFile, FileHeader* header, char** fileName)
 {
     size_t read;
+
+    // Magic number
+    unsigned char magic[sizeof header->magic];
+    if (!readFile(archiveFile, magic, sizeof magic, &read) || read != sizeof magic)
+    {
+        perror("Failed to read file magic");
+        return false;
+    }
+    header->magic = read_u32_le(magic);
 
     // Name length
     unsigned char nameLength[sizeof header->nameLength];
@@ -115,6 +169,24 @@ bool readFileHeader(FILE* archiveFile, FileHeader* header, char** fileName)
     }
     header->compSize = read_u64_le(compSize);
 
+    // CRC uncompressed
+    unsigned char crcUncompressed[sizeof header->crc32_uncompressed];
+    if (!readFile(archiveFile, crcUncompressed, sizeof crcUncompressed, &read) || read != sizeof crcUncompressed)
+    {
+        perror("Failed to read CRC32 uncompressed");
+        return false;
+    }
+    header->crc32_uncompressed = read_u32_le(crcUncompressed);
+
+    // CRC compressed
+    unsigned char crcCompressed[sizeof header->crc32_compressed];
+    if (!readFile(archiveFile, crcCompressed, sizeof crcCompressed, &read) || read != sizeof crcCompressed)
+    {
+        perror("Failed to read CRC32 compressed");
+        return false;
+    }
+    header->crc32_compressed = read_u32_le(crcCompressed);
+
     // Flags
     unsigned char flags[sizeof header->flags];
     if (!readFile(archiveFile, flags, sizeof flags, &read) || read != sizeof flags)
@@ -140,131 +212,4 @@ bool readFileHeader(FILE* archiveFile, FileHeader* header, char** fileName)
     (*fileName)[header->nameLength] = '\0';
 
     return true;
-}
-
-bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize)
-{
-    if (!inFile || !outFile || !outCompSize) return false;
-
-    unsigned char inBuf[BUFFER_SIZE];
-    unsigned char outBuf[BUFFER_SIZE];
-    uint64_t totalWritten = 0;
-
-    z_stream strm = {0};
-
-    if (deflateInit(&strm, Z_DEFAULT_COMPRESSION) != Z_OK)
-    {
-        fprintf(stderr, "deflateInit failed\n");
-        return false;
-    }
-
-    int flush;
-    do
-    {
-        size_t readBytes;
-        if (!readFile(inFile, (char*)inBuf, BUFFER_SIZE, &readBytes))
-        {
-            deflateEnd(&strm);
-            return false;
-        }
-
-        flush = feof(inFile) ? Z_FINISH : Z_NO_FLUSH;
-        strm.next_in = inBuf;
-        strm.avail_in = (uInt)readBytes;
-
-        do
-        {
-            strm.next_out = outBuf;
-            strm.avail_out = BUFFER_SIZE;
-
-            int ret = deflate(&strm, flush);
-            if (ret == Z_STREAM_ERROR)
-            {
-                deflateEnd(&strm);
-                fprintf(stderr, "deflate error: Z_STREAM_ERROR\n");
-                return false;
-            }
-
-            size_t have = BUFFER_SIZE - strm.avail_out;
-            if (have > 0)
-            {
-                if (!writeFile(outFile, (const char*)outBuf, have))
-                {
-                    deflateEnd(&strm);
-                    return false;
-                }
-                totalWritten += have;
-            }
-        } while (strm.avail_out == 0);
-    } while (flush != Z_FINISH || strm.avail_in > 0);
-
-    deflateEnd(&strm);
-
-    *outCompSize = totalWritten;
-    return true;
-}
-
-bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize)
-{
-    if (!inFile || !outFile) return false;
-
-    unsigned char inBuf[BUFFER_SIZE];
-    unsigned char outBuf[BUFFER_SIZE];
-
-    z_stream strm = {0};
-    
-    if (inflateInit(&strm) != Z_OK)
-    {
-        fprintf(stderr, "inflateInit failed\n");
-        return false;
-    }
-
-    uint64_t totalRead = 0;
-    int ret = Z_OK;
-
-    while (ret != Z_STREAM_END && totalRead < compSize)
-    {
-        size_t toRead = (compSize - totalRead < BUFFER_SIZE)
-                        ? (size_t)(compSize - totalRead)
-                        : BUFFER_SIZE;
-
-        size_t bytesRead;
-        if (!readFile(inFile, (char*)inBuf, toRead, &bytesRead) || (bytesRead == 0 && !feof(inFile)))
-        {
-            inflateEnd(&strm);
-            return false;
-        }
-
-        totalRead += bytesRead;
-
-        strm.next_in = inBuf;
-        strm.avail_in = (uInt)bytesRead;
-
-        while (strm.avail_in > 0)
-        {
-            strm.next_out = outBuf;
-            strm.avail_out = BUFFER_SIZE;
-
-            ret = inflate(&strm, Z_NO_FLUSH);
-            if (ret != Z_OK && ret != Z_STREAM_END)
-            {
-                inflateEnd(&strm);
-                fprintf(stderr, "inflate error: %d\n", ret);
-                return false;
-            }
-
-            size_t have = BUFFER_SIZE - strm.avail_out;
-            if (have > 0)
-            {
-                if (!writeFile(outFile, (const char*)outBuf, have))
-                {
-                    inflateEnd(&strm);
-                    return false;
-                }
-            }
-        }
-    }
-
-    inflateEnd(&strm);
-    return ret == Z_STREAM_END;
 }

@@ -35,18 +35,33 @@ bool arch_addFile(Archive* archive, const char* path)
     bool success = false;
 
     FileHeader fileHeader;
-    if (!createFileHeader(path, COMPRESSED_FLAG, &fileHeader, &file)) return false;
+    uint64_t fileSize = 0;
+    if (!createFileHeader(path, COMPRESSED_FLAG, &fileHeader, &file, &fileSize)) return false;
 
     fileName = getFileName(path, false);
     if (!fileName) goto cleanup;
 
     uint64_t compSizePos = 0;
-    if (!writeFileHeader(archive->file, &fileHeader, fileName, &compSizePos)) goto cleanup;
+    uint64_t crcUncompressedPos = 0;
+    uint64_t crcCompressedPos = 0;
+    if (!writeFileHeader(archive->file, &fileHeader, fileName, &compSizePos, &crcUncompressedPos, &crcCompressedPos)) goto cleanup;
 
-    uint64_t compSize = 0;
-    if (!compressFileStream(file, archive->file, &compSize)) goto cleanup;
+    if (fileHeader.flags & COMPRESSED_FLAG)
+    {
+        uint64_t compSize = 0;
+        uint32_t crcUncompressed = 0;
+        uint32_t crcCompressed = 0;
 
-    if (!updateFileHeaderCompSize(&fileHeader, archive->file, compSizePos, compSize)) goto cleanup;
+        if (!compressFileStream(file, archive->file, &compSize, &crcUncompressed, &crcCompressed)) goto cleanup;
+        if (!updateFileHeaderCompSize(&fileHeader, archive->file, compSizePos, compSize)) goto cleanup;
+        if (!updateFileHeaderCRC32(&fileHeader, archive->file, crcUncompressedPos, crcCompressedPos, crcUncompressed, crcCompressed)) goto cleanup;
+    }
+    else
+    {
+        uint32_t crc = 0;
+        if (!copyFileData(file, archive->file, fileSize, &crc)) goto cleanup;
+        if (!updateFileHeaderCRC32(&fileHeader, archive->file, crcUncompressedPos, crcCompressedPos, crc, crc)) goto cleanup;
+    }
 
     archive->fileCount++;
     if (!updateArchiveHeaderFileCount(archive->file, archive->fileCount)) goto cleanup;

@@ -19,7 +19,7 @@ Archive* arch_open(const char* path)
     if (!archive) return NULL;
 
     ArchiveHeader header;
-    if (!readArchiveHeader(archive->file, &header))
+    if (!readArchiveHeader(archive->file, &header) || memcmp(header.magic, ARCHIVE_MAGIC, sizeof(header.magic)) != 0)
     {
         freeArchive(archive);
         return NULL;
@@ -58,11 +58,14 @@ bool arch_retrieveNextFile(Archive* archive, const char* output_dir)
 
     if (header.flags & COMPRESSED_FLAG)
     {
-        ok = decompressFileStream(archive->file, file, header.compSize);
+        uint32_t crcUncompressed = 0;
+        uint32_t crcCompressed = 0;
+        ok = decompressFileStream(archive->file, file, header.compSize, &crcUncompressed, &crcCompressed);
     }
     else
     {
-        ok = copyFileData(archive->file, file, header.origSize);
+        uint32_t crc = 0;
+        ok = copyFileData(archive->file, file, header.origSize, &crc);
     }
 
 cleanup:

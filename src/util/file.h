@@ -34,11 +34,14 @@ uint16_t read_u16_le(const unsigned char b[2]);
 uint32_t read_u32_le(const unsigned char b[4]);
 uint64_t read_u64_le(const unsigned char b[8]);
 
-bool readFile(FILE* file, char* buffer, size_t buffer_size, size_t* bytesRead);
+bool readFile(FILE* file, char* buffer, size_t buffer_size, size_t* outbytesRead);
 bool writeFile(FILE* file, const char* buffer, size_t bytes);
-bool copyFileData(FILE* in, FILE* out, uint64_t fileSize);
+bool copyFileData(FILE* in, FILE* out, uint64_t fileSize, uint32_t* outCrc);
 
 uint64_t getFileSize(FILE* file);
 char* getFileName(const char* filePath, bool stripExtension);
+
+bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);
+bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);
 
 #endif // FILE_H
