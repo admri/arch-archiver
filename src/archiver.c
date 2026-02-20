@@ -87,8 +87,6 @@ ArchResult arch_addFile(Archive* archive, const char* path)
     }
 
     archive->fileCount++;
-    if (!updateArchiveHeaderFileCount(archive->file, archive->fileCount))
-            goto io_fail;
 
     fclose(file);
     free(fileName);
@@ -112,5 +110,12 @@ io_fail:
 
 void arch_close(Archive* archive)
 {
-    if (archive) freeArchive(archive);
+    if (!archive) return;
+
+    if (!archive->readOnly)
+    {
+        updateArchiveHeaderFileCount(archive->file, archive->fileCount);
+    }
+
+    freeArchive(archive);
 }

@@ -7,6 +7,7 @@
 
 typedef struct Archive
 {
+    bool readOnly;
     const char* filePath;
     FILE* file;
     size_t fileCount;

@@ -5,8 +5,12 @@
 
 Archive* createArchive(const char* path, const char* fileMode)
 {
+    if (!path || !fileMode) return NULL;
+
     Archive* archive = malloc(sizeof *archive);
     if (!archive) return NULL;
+
+    archive->readOnly = fileMode[0] == "r";
 
     archive->filePath = strdup(path);
     if (!archive->filePath)

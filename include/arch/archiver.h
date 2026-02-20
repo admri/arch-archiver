@@ -12,8 +12,8 @@ extern "C" {
 typedef struct Archive Archive;
 
 ArchResult arch_create(const char* path, Archive** outArchive);
-ArchResult arch_addFile(struct Archive* archive, const char* path);
-void arch_close(struct Archive* archive);
+ArchResult arch_addFile(Archive* archive, const char* path);
+void arch_close(Archive* archive);
 
 #ifdef __cplusplus
 }

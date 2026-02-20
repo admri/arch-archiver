@@ -6,6 +6,22 @@
 #include <stdio.h>
 #include <string.h>
 
+size_t tryAllocateBuffer(unsigned char** buffer)
+{
+    size_t sizes[] = {65536, 32768, 16384, 8192, 4096};
+    
+    for (int i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
+    {
+        *buffer = malloc(sizes[i]);
+        if (*buffer)
+        {
+            return sizes[i];
+        }
+    }
+    
+    return 0;
+}
+
 uint16_t read_u16_le(const unsigned char b[2])
 {
     return ((uint16_t)b[0] |
@@ -25,7 +41,7 @@ uint64_t read_u64_le(const unsigned char b[8])
     uint64_t res = 0;
     for (int i = 0; i < 8; i++)
     {
-        res |= (uint64_t)b[i] << (8 * i);
+        res |= ((uint64_t)b[i]) << (8 * i);
     }
     return res;
 }
@@ -64,28 +80,40 @@ bool copyFileData(FILE* in, FILE* out, uint64_t fileSize, uint32_t* outCrc)
 {
     if (!in || !out) return false;
 
-    unsigned char buffer[BUFFER_SIZE];
+    unsigned char* buffer = NULL;
+    size_t buffer_size = tryAllocateBuffer(&buffer);
+    if (buffer_size == 0)
+    {
+        return false;
+    }
+
     uint64_t bytesLeft = fileSize;
     *outCrc = crc32(0L, Z_NULL, 0);
 
     while (bytesLeft > 0)
     {
-        // Read chunk (max BUFFER_SIZE)
-        size_t chunk = (bytesLeft < BUFFER_SIZE) ? (size_t)bytesLeft : BUFFER_SIZE;
+        // Read chunk (max buffer_size)
+        size_t chunk = (bytesLeft < buffer_size) ? (size_t)bytesLeft : buffer_size;
         size_t readBytes;
-        if (!readFile(in, (char*)buffer, chunk, &readBytes)) return false;
-        if (readBytes == 0) return false;
+
+        if (!readFile(in, (char*)buffer, chunk, &readBytes)) goto cleanup;
+        if (readBytes == 0) goto cleanup;
 
         // Update CRC
         *outCrc = crc32(*outCrc, buffer, (uInt)readBytes);
         
         // Write chunk
-        if (!writeFile(out, (const char*)buffer, readBytes)) return false;
+        if (!writeFile(out, (const char*)buffer, readBytes)) goto cleanup;
         
         bytesLeft -= readBytes;
     }
 
+    free(buffer);
     return true;
+
+cleanup:
+    free(buffer);
+    return false;
 }
 
 uint64_t getFileSize(FILE* file)
@@ -107,6 +135,8 @@ uint64_t getFileSize(FILE* file)
 
 char* getFileName(const char* filePath, bool stripExtension)
 {
+    if (!filePath) return NULL;
+
     const char* separator = strrchr(filePath, DIR_SEP);
     const char* last = separator ? separator + 1 : filePath;
 
@@ -129,8 +159,17 @@ bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint
 {
     if (!inFile || !outFile || !outCompSize || !outCrcUncompressed || !outCrcCompressed) return false;
 
-    unsigned char inBuf[BUFFER_SIZE];
-    unsigned char outBuf[BUFFER_SIZE];
+    unsigned char* inBuf = NULL;
+    unsigned char* outBuf = NULL;
+
+    size_t inBufSize = tryAllocateBuffer(&inBuf);
+    size_t outBufSize = tryAllocateBuffer(&outBuf);
+    if (inBufSize == 0 || outBufSize == 0)
+    {
+        goto cleanup;
+    }
+    size_t buffer_size = (inBufSize < outBufSize) ? inBufSize : outBufSize;
+
     uint64_t totalWritten = 0;
 
     *outCrcUncompressed = 0;
@@ -141,17 +180,17 @@ bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint
     if (deflateInit(&strm, Z_DEFAULT_COMPRESSION) != Z_OK)
     {
         fprintf(stderr, "deflateInit failed\n");
-        return false;
+        goto cleanup;
     }
 
     int flush;
     do
     {
         size_t readBytes;
-        if (!readFile(inFile, (char*)inBuf, BUFFER_SIZE, &readBytes))
+        if (!readFile(inFile, (char*)inBuf, buffer_size, &readBytes))
         {
             deflateEnd(&strm);
-            return false;
+            goto cleanup;
         }
 
         if (readBytes > 0)
@@ -166,17 +205,17 @@ bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint
         do
         {
             strm.next_out = outBuf;
-            strm.avail_out = BUFFER_SIZE;
+            strm.avail_out = buffer_size;
 
             int ret = deflate(&strm, flush);
             if (ret == Z_STREAM_ERROR)
             {
                 deflateEnd(&strm);
                 fprintf(stderr, "deflate error: Z_STREAM_ERROR\n");
-                return false;
+                goto cleanup;
             }
 
-            size_t have = BUFFER_SIZE - strm.avail_out;
+            size_t have = buffer_size - strm.avail_out;
             if (have > 0)
             {
                 *outCrcCompressed = crc32(*outCrcCompressed, outBuf, (uInt)have);
@@ -184,7 +223,7 @@ bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint
                 if (!writeFile(outFile, (const char*)outBuf, have))
                 {
                     deflateEnd(&strm);
-                    return false;
+                    goto cleanup;
                 }
 
                 totalWritten += have;
@@ -195,15 +234,31 @@ bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint
     deflateEnd(&strm);
 
     *outCompSize = totalWritten;
+
+    free(inBuf);
+    free(outBuf);
     return true;
+
+cleanup:
+    free(inBuf);
+    free(outBuf);
+    return false;
 }
 
 bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed)
 {
-    if (!inFile || !outFile) return false;
+    if (!inFile || !outFile || !outCrcUncompressed || !outCrcCompressed) return false;
 
-    unsigned char inBuf[BUFFER_SIZE];
-    unsigned char outBuf[BUFFER_SIZE];
+    unsigned char* inBuf = NULL;
+    unsigned char* outBuf = NULL;
+    
+    size_t inBufSize = tryAllocateBuffer(&inBuf);
+    size_t outBufSize = tryAllocateBuffer(&outBuf);
+    if (inBufSize == 0 || outBufSize == 0)
+    {
+        goto cleanup;
+    }
+    size_t buffer_size = (inBufSize < outBufSize) ? inBufSize : outBufSize;
     
     *outCrcUncompressed = 0;
     *outCrcCompressed = 0;
@@ -213,7 +268,7 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
     if (inflateInit(&strm) != Z_OK)
     {
         fprintf(stderr, "inflateInit failed\n");
-        return false;
+        goto cleanup;
     }
 
     uint64_t totalRead = 0;
@@ -221,15 +276,15 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
 
     while (ret != Z_STREAM_END && totalRead < compSize)
     {
-        size_t toRead = (compSize - totalRead < BUFFER_SIZE)
+        size_t toRead = (compSize - totalRead < buffer_size)
                         ? (size_t)(compSize - totalRead)
-                        : BUFFER_SIZE;
+                        : buffer_size;
 
         size_t bytesRead;
         if (!readFile(inFile, (char*)inBuf, toRead, &bytesRead) || (bytesRead == 0 && !feof(inFile)))
         {
             inflateEnd(&strm);
-            return false;
+            goto cleanup;
         }
 
         if (bytesRead > 0)
@@ -245,17 +300,17 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
         while (strm.avail_in > 0)
         {
             strm.next_out = outBuf;
-            strm.avail_out = BUFFER_SIZE;
+            strm.avail_out = buffer_size;
 
             ret = inflate(&strm, Z_NO_FLUSH);
             if (ret != Z_OK && ret != Z_STREAM_END)
             {
                 inflateEnd(&strm);
                 fprintf(stderr, "inflate error: %d\n", ret);
-                return false;
+                goto cleanup;
             }
 
-            size_t have = BUFFER_SIZE - strm.avail_out;
+            size_t have = buffer_size - strm.avail_out;
             if (have > 0)
             {
                 *outCrcUncompressed = crc32(*outCrcUncompressed, outBuf, (uInt)have);
@@ -263,12 +318,20 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
                 if (!writeFile(outFile, (const char*)outBuf, have))
                 {
                     inflateEnd(&strm);
-                    return false;
+                    goto cleanup;
                 }
             }
         }
     }
 
     inflateEnd(&strm);
+
+    free(inBuf);
+    free(outBuf);
     return ret == Z_STREAM_END;
+
+cleanup:
+    free(inBuf);
+    free(outBuf);
+    return false;
 }

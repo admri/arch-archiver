@@ -101,7 +101,6 @@ bool updateFileHeaderCompSize(FileHeader* header, FILE *file, uint64_t compSizeP
 
     if (fseek64(file, (int64_t)compSizePos, SEEK_SET) != 0) return false;
     if (!writeFile(file, (const char*)&compSize, sizeof(compSize))) return false;
-    fflush(file);
 
     if (fseek64(file, origPos, SEEK_SET) != 0) return false;
 
@@ -116,11 +115,9 @@ bool updateFileHeaderCRC32(FileHeader *header, FILE *file, uint64_t crc32Uncompr
 
     if (fseek64(file, (int64_t)crc32UncompressedPos, SEEK_SET) != 0) return false;
     if (!writeFile(file, (const char*)&crc32Uncompressed, sizeof(crc32Uncompressed))) return false;
-    fflush(file);
 
     if (fseek64(file, (int64_t)crc32CompressedPos, SEEK_SET) != 0) return false;
     if (!writeFile(file, (const char*)&crc32Compressed, sizeof(crc32Compressed))) return false;
-    fflush(file);
 
     if (fseek64(file, origPos, SEEK_SET) != 0) return false;
 

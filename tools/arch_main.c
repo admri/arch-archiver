@@ -19,7 +19,7 @@ int main(int argc, char** argv)
 
     if (argc > 2)
     {
-        int fileCount = argc - 2;
+        size_t fileCount = argc - 2;
         const char** filePaths = (const char**)&argv[2];
         
         ArchResult r = arch_create(archiveFilePath, &archive);
@@ -29,12 +29,12 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        for (int i = 0; i < fileCount; ++i)
+        for (size_t i = 0; i < fileCount; ++i)
         {
             r = arch_addFile(archive, filePaths[i]);
             if (r != ARCH_OK)
             {
-                fprintf(stderr, "arch: Failed to add file to archive: %s\n", arch_strerror(r));
+                fprintf(stderr, "arch: Failed to add file #%zu to archive: %s\n", i, arch_strerror(r));
             }
         }
     }

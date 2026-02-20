@@ -5,10 +5,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE 4096
-#endif
-
 #ifdef _WIN32
     #include <direct.h>
     #define MKDIR(path) _mkdir(path)

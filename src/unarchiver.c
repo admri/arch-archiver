@@ -32,13 +32,15 @@ ArchResult arch_open(const char* path, Archive** outArchive)
         return ARCH_ERR_NOT_AN_ARCHIVE;
     }
 
-    if (header.version < ARCH_VERSION)
+    if (header.version > ARCH_VERSION)
     {
         freeArchive(archive);
         return ARCH_ERR_UNSUPPORTED_VERSION;
     }
 
     archive->fileCount = header.fileCount;
+    archive->currentFileIndex = 0;
+    archive->readOnly = true;
 
     *outArchive = archive;
     return ARCH_OK;
