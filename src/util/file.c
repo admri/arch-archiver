@@ -245,9 +245,12 @@ cleanup:
     return false;
 }
 
-bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed)
+ArchResult decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed)
 {
-    if (!inFile || !outFile || !outCrcUncompressed || !outCrcCompressed) return false;
+    if (!inFile || !outFile || !outCrcUncompressed || !outCrcCompressed)
+        return ARCH_ERR_INVALID_ARGUMENT;
+
+    ArchResult result = ARCH_OK;
 
     unsigned char* inBuf = NULL;
     unsigned char* outBuf = NULL;
@@ -256,6 +259,7 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
     size_t outBufSize = tryAllocateBuffer(&outBuf);
     if (inBufSize == 0 || outBufSize == 0)
     {
+        result = ARCH_ERR_OUT_OF_MEMORY;
         goto cleanup;
     }
     size_t buffer_size = (inBufSize < outBufSize) ? inBufSize : outBufSize;
@@ -267,7 +271,7 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
     
     if (inflateInit(&strm) != Z_OK)
     {
-        fprintf(stderr, "inflateInit failed\n");
+        result = ARCH_ERR_INTERNAL;
         goto cleanup;
     }
 
@@ -306,6 +310,25 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
             if (ret != Z_OK && ret != Z_STREAM_END)
             {
                 inflateEnd(&strm);
+                switch (ret)
+                {
+                    case Z_MEM_ERROR:
+                        result = ARCH_ERR_OUT_OF_MEMORY;
+                        break;
+
+                    case Z_DATA_ERROR:
+                        result = ARCH_ERR_CORRUPTED;
+                        break;
+
+                    case Z_STREAM_ERROR:
+                        result = ARCH_ERR_INTERNAL;
+                        break;
+                    
+                    default:
+                        result = ARCH_ERR_COMPRESSION;
+                        break;
+                }
+
                 fprintf(stderr, "inflate error: %d\n", ret);
                 goto cleanup;
             }
@@ -326,12 +349,13 @@ bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32
 
     inflateEnd(&strm);
 
-    free(inBuf);
-    free(outBuf);
-    return ret == Z_STREAM_END;
+    if (ret != Z_STREAM_END)
+    {
+        result = ARCH_ERR_CORRUPTED;
+    }
 
 cleanup:
     free(inBuf);
     free(outBuf);
-    return false;
+    return result;
 }

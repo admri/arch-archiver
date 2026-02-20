@@ -94,10 +94,12 @@ ArchResult arch_retrieveNextFile(Archive* archive, const char* output_dir)
     {
         uint32_t crcUncompressed = 0;
         uint32_t crcCompressed = 0;
+
+        ArchResult decompResult = decompressFileStream(archive->file, file, header.compSize, &crcUncompressed, &crcCompressed);
         
-        if (!decompressFileStream(archive->file, file, header.compSize, &crcUncompressed, &crcCompressed))
+        if (decompResult != ARCH_OK)
         {
-            result = ARCH_ERR_COMPRESSION;
+            result = decompResult;
             goto cleanup;
         }
 

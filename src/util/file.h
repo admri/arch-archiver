@@ -1,6 +1,8 @@
 #ifndef FILE_H
 #define FILE_H
 
+#include <arch/arch_errors.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -38,6 +40,6 @@ uint64_t getFileSize(FILE* file);
 char* getFileName(const char* filePath, bool stripExtension);
 
 bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);
-bool decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);
+ArchResult decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);
 
 #endif // FILE_H
