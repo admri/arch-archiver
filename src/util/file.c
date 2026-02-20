@@ -155,6 +155,132 @@ char* getFileName(const char* filePath, bool stripExtension)
     return fileName;
 }
 
+char* sanitizeFilePath(const char *inputPath)
+{
+    if (!inputPath) return NULL;
+
+    char* safePath = strdup(inputPath);
+    if (!safePath) return NULL;
+
+    for (char* p = safePath; *p; p++)
+    {
+        if (*p == '\\')
+        {
+            *p = '/';
+        }
+    }
+
+    char* start = safePath;
+
+    // Strip leading drive letter (e.g., "C:")
+    if (strlen(start) >= 2 && start[1] == ':')
+    {
+        start += 2;
+    }
+
+    bool changed;
+    do
+    {
+        changed = false;
+        
+        // Strip leading slashes
+        while (*start == '/')
+        { 
+            start++; 
+            changed = true; 
+        }
+        
+        // Strip leading "./"
+        if (strncmp(start, "./", 2) == 0)
+        { 
+            start += 2; 
+            changed = true; 
+        }
+        
+        // Strip leading "../"
+        if (strncmp(start, "../", 3) == 0)
+        { 
+            start += 3; 
+            changed = true; 
+        }
+    } while (changed);
+
+    memmove(safePath, start, strlen(start) + 1);
+    return safePath;
+}
+
+bool isDirectory(const char *path)
+{
+if (!path) return false;
+
+#ifdef _WIN32
+    struct _stat path_stat;
+    if (_stat(path, &path_stat) != 0)
+    {
+        return false; 
+    }
+    return (path_stat.st_mode & _S_IFDIR) != 0;
+
+#else
+    struct stat path_stat;
+    if (stat(path, &path_stat) != 0)
+    {
+        return false; 
+    }
+    return S_ISDIR(path_stat.st_mode);
+#endif
+}
+
+bool createParentDirectories(const char* filepath)
+{
+    if (!filepath) return false;
+
+    char* path_copy = strdup(filepath);
+    if (!path_copy) return false;
+
+    // Find the last separator (either / or \)
+    char* last_slash = strrchr(path_copy, '/');
+    char* last_backslash = strrchr(path_copy, '\\');
+    char* last_sep = (last_slash > last_backslash) ? last_slash : last_backslash;
+
+    if (!last_sep) 
+    {
+        free(path_copy);
+        return true; 
+    }
+
+    *last_sep = '\0';
+
+    char* p = path_copy;
+
+    // Skip Windows drive letter (e.g., "C:")
+    if (strlen(path_copy) >= 2 && path_copy[1] == ':')
+    {
+        p += 2;
+    }
+
+    // Skip leading slashes
+    while (*p == '/' || *p == '\\') p++;
+
+    for (; *p != '\0'; p++) 
+    {
+        if (*p == '/' || *p == '\\') 
+        {
+            char current_sep = *p;
+            *p = '\0'; 
+            
+            MKDIR(path_copy); 
+            
+            *p = current_sep;
+        }
+    }
+    
+    MKDIR(path_copy);
+
+    free(path_copy);
+    return true;
+}
+
 bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed)
 {
     if (!inFile || !outFile || !outCompSize || !outCrcUncompressed || !outCrcCompressed) return false;

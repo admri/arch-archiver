@@ -9,22 +9,25 @@
 
 #ifdef _WIN32
     #include <direct.h>
+    #include <io.h>
+    #include <sys/stat.h>
+
     #define MKDIR(path) _mkdir(path)
 
     #define fseek64 _fseeki64
     #define ftell64 _ftelli64
+
+    #define DIR_SEP '\\'
 #else
+    #include <dirent.h>
     #include <sys/stat.h>
     #include <sys/types.h>
+
     #define MKDIR(path) mkdir(path, 0755)
     
     #define fseek64 fseeko
     #define ftell64 ftello
-#endif
-
-#ifdef _WIN32
-    #define DIR_SEP '\\'
-#else
+    
     #define DIR_SEP '/'
 #endif
 
@@ -38,6 +41,11 @@ bool copyFileData(FILE* in, FILE* out, uint64_t fileSize, uint32_t* outCrc);
 
 uint64_t getFileSize(FILE* file);
 char* getFileName(const char* filePath, bool stripExtension);
+
+char* sanitizeFilePath(const char* inputPath);
+
+bool isDirectory(const char* path);
+bool createParentDirectories(const char* filePath);
 
 bool compressFileStream(FILE* inFile, FILE* outFile, uint64_t* outCompSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);
 ArchResult decompressFileStream(FILE* inFile, FILE* outFile, uint64_t compSize, uint32_t* outCrcUncompressed, uint32_t* outCrcCompressed);

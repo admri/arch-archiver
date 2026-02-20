@@ -31,10 +31,23 @@ int main(int argc, char** argv)
 
         for (size_t i = 0; i < fileCount; ++i)
         {
-            r = arch_addFile(archive, filePaths[i]);
-            if (r != ARCH_OK)
+            const char* currentPath = filePaths[i];
+            
+            if (isDirectory(currentPath))
             {
-                fprintf(stderr, "arch: Failed to add file #%zu to archive: %s\n", i, arch_strerror(r));
+                r = arch_addDirectory(archive, currentPath);
+                if (r != ARCH_OK)
+                {
+                    fprintf(stderr, "arch: Failed to add directory '%s': %s\n", currentPath, arch_strerror(r));
+                }
+            }
+            else
+            {
+                r = arch_addFile(archive, currentPath);
+                if (r != ARCH_OK)
+                {
+                    fprintf(stderr, "arch: Failed to add file '%s': %s\n", currentPath, arch_strerror(r));
+                }
             }
         }
     }

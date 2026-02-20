@@ -40,6 +40,8 @@ ArchResult arch_addFile(Archive* archive, const char* path)
     if (!archive || !path)
         return ARCH_ERR_INVALID_ARGUMENT;
 
+    ArchResult result = ARCH_OK;
+
     FILE* file = NULL;
     char* fileName = NULL;
 
@@ -49,16 +51,22 @@ ArchResult arch_addFile(Archive* archive, const char* path)
     if (!createFileHeader(path, ARCH_FLAG_COMPRESSED, &fileHeader, &file, &fileSize))
         return ARCH_ERR_IO;
 
-    fileName = getFileName(path, false);
+    fileName = sanitizeFilePath(path);
     if (!fileName)
-        goto oom;
+    {
+        result = ARCH_ERR_OUT_OF_MEMORY;
+        goto cleanup;
+    }
 
     uint64_t compSizePos = 0;
     uint64_t crcUncompressedPos = 0;
     uint64_t crcCompressedPos = 0;
 
     if (!writeFileHeader(archive->file, &fileHeader, fileName, &compSizePos, &crcUncompressedPos, &crcCompressedPos))
-        goto io_fail;
+    {
+        result = ARCH_ERR_IO;
+        goto cleanup;
+    }
 
     if (fileHeader.flags & ARCH_FLAG_COMPRESSED)
     {
@@ -67,45 +75,140 @@ ArchResult arch_addFile(Archive* archive, const char* path)
         uint32_t crcCompressed = 0;
 
         if (!compressFileStream(file, archive->file, &compSize, &crcUncompressed, &crcCompressed))
-            goto compress_fail;
+        {
+            result = ARCH_ERR_COMPRESSION;
+            goto cleanup;
+        }
 
         if (!updateFileHeaderCompSize(&fileHeader, archive->file, compSizePos, compSize))
-            goto io_fail;
+        {
+            result = ARCH_ERR_IO;
+            goto cleanup;
+        }
 
         if (!updateFileHeaderCRC32(&fileHeader, archive->file, crcUncompressedPos, crcCompressedPos, crcUncompressed, crcCompressed))
-            goto io_fail;
+        {
+            result = ARCH_ERR_IO;
+            goto cleanup;
+        }
     }
     else
     {
         uint32_t crc = 0;
 
         if (!copyFileData(file, archive->file, fileSize, &crc))
-            goto io_fail;
+        {
+            result = ARCH_ERR_IO;
+            goto cleanup;
+        }
 
         if (!updateFileHeaderCRC32(&fileHeader, archive->file, crcUncompressedPos, crcCompressedPos, crc, crc))
-            goto io_fail;
+        {
+            result = ARCH_ERR_IO;
+            goto cleanup;
+        }
     }
 
     archive->fileCount++;
 
+cleanup:
     fclose(file);
     free(fileName);
-    return ARCH_OK;
+    return result;
+}
 
-oom:
-    fclose(file);
-    free(fileName);
-    return ARCH_ERR_OUT_OF_MEMORY;
+ArchResult arch_addDirectory(Archive* archive, const char* dirPath)
+{
+    if (!archive || !dirPath)
+        return ARCH_ERR_INVALID_ARGUMENT;
 
-compress_fail:
-    fclose(file);
-    free(fileName);
-    return ARCH_ERR_COMPRESSION;
+    ArchResult result = ARCH_OK;
 
-io_fail:
-    fclose(file);
-    free(fileName);
-    return ARCH_ERR_IO;
+#ifdef _WIN32
+    struct _finddata_t findFileData;
+    intptr_t hFind;
+    char searchPath[1024];
+    char pathBuffer[1024];
+
+    snprintf(searchPath, sizeof(searchPath), "%s\\*", dirPath);
+
+    hFind = _findfirst(searchPath, &findFileData);
+    if (hFind == -1L)
+    {
+        return ARCH_ERR_IO;
+    }
+
+    do {
+        // Skip "." and ".."
+        if (strcmp(findFileData.name, ".") == 0 || strcmp(findFileData.name, "..") == 0)
+        {
+            continue;
+        }
+
+        // Build full path
+        snprintf(pathBuffer, sizeof(pathBuffer), "%s\\%s", dirPath, findFileData.name);
+
+        // Check if directory or file
+        if (findFileData.attrib & _A_SUBDIR)
+        {
+            ArchResult r = arch_addDirectory(archive, pathBuffer);
+            if (r != ARCH_OK) result = r;
+        } 
+        else
+        {
+            ArchResult r = arch_addFile(archive, pathBuffer);
+            if (r != ARCH_OK)
+            {
+                fprintf(stderr, "Failed to add %s\n", pathBuffer);
+                result = r;
+            }
+        }
+    } while (_findnext(hFind, &findFileData) == 0);
+
+    _findclose(hFind);
+
+#else
+    DIR* dir = opendir(dirPath);
+    if (!dir) return ARCH_ERR_IO;
+
+    struct dirent* entry;
+    struct stat path_stat;
+    char pathBuffer[1024]; 
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        // Skip "." and ".."
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        // Build full path
+        snprintf(pathBuffer, sizeof(pathBuffer), "%s/%s", dirPath, entry->d_name);
+
+        // Check if directory or file
+        if (stat(pathBuffer, &path_stat) != 0) continue; 
+
+        if (S_ISDIR(path_stat.st_mode))
+        {
+            ArchResult r = arch_addDirectory(archive, pathBuffer);
+            if (r != ARCH_OK) result = r; 
+        } 
+        else if (S_ISREG(path_stat.st_mode))
+        {
+            ArchResult r = arch_addFile(archive, pathBuffer);
+            if (r != ARCH_OK)
+            {
+                fprintf(stderr, "Failed to add %s\n", pathBuffer);
+                result = r;
+            }
+        }
+    }
+
+    closedir(dir);
+#endif
+
+    return result;
 }
 
 void arch_close(Archive* archive)

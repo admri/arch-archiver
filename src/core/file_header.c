@@ -16,7 +16,7 @@ bool createFileHeader(const char* path, uint8_t flags, FileHeader* header, FILE*
 
     *outOrigSize = getFileSize(file);
 
-    fileName = getFileName(path, false);
+    fileName = sanitizeFilePath(path);
     if (!fileName)
     {
         fclose(file);

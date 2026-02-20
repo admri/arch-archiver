@@ -83,6 +83,12 @@ ArchResult arch_retrieveNextFile(Archive* archive, const char* output_dir)
 
     snprintf(filePath, filePathSize, "%s%c%s", output_dir, DIR_SEP, fileName);
 
+    if (!createParentDirectories(filePath))
+    {
+        result = ARCH_ERR_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
     file = fopen(filePath, "wb");
     if (!file)
     {
