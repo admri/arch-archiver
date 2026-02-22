@@ -211,7 +211,7 @@ char* sanitizeFilePath(const char *inputPath)
 
 bool isDirectory(const char *path)
 {
-if (!path) return false;
+    if (!path) return false;
 
 #ifdef _WIN32
     struct _stat path_stat;

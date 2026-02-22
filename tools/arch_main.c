@@ -4,10 +4,13 @@
 
 #include "../src/util/file.h"
 
+#include <locale.h>
 #include <stdio.h>
 
 int main(int argc, char** argv)
 {
+    setlocale(LC_ALL, "");
+
     if (argc < 2)
     {
         printf("Usage: %s [archive_name] [file1] [file2]...\n", argv[0]);
@@ -32,9 +35,11 @@ int main(int argc, char** argv)
         for (size_t i = 0; i < fileCount; ++i)
         {
             const char* currentPath = filePaths[i];
+            printf("Adding '%s' to archive...\n", currentPath);
             
             if (isDirectory(currentPath))
             {
+                printf("'%s' is a directory, adding recursively...\n", currentPath);
                 r = arch_addDirectory(archive, currentPath);
                 if (r != ARCH_OK)
                 {
@@ -43,6 +48,7 @@ int main(int argc, char** argv)
             }
             else
             {
+                printf("'%s' is a file, adding...\n", currentPath);
                 r = arch_addFile(archive, currentPath);
                 if (r != ARCH_OK)
                 {
